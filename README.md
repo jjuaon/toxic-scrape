@@ -8,11 +8,12 @@ We collected posts and replies from X on 6 topics, measured how toxic they are, 
 
 1. Which topics are the most toxic? Are replies worse than posts?
 2. What kind of toxicity is most common in each topic (insult, swearing, threat...)?
-3. What does a simple bad-word list miss compared with AI models?
+3. How accurate is each method (bad-word list, Detoxify, Twitter-RoBERTa)? We check this against our own hand labels.
 
 ```
- 1. Choose topics  →  2. Test scrape  →  3. Real scrape  →  4. Clean  →  5. Analyse
-    (group vote)        (small runs)       (collect_x.py)     (notebook)    (notebook)
+ 1. Choose topics  →  2. Test scrape  →  3. Real scrape  →  4. Clean  →  5. Analyse  →  6. Hand-label
+    (group vote)        (small runs)       (collect_x.py)     (notebook)    (notebook)      (make_label_sample.py
+                                                                                             + notebook)
 ```
 
 ---
@@ -109,7 +110,7 @@ python collect_x.py summary --out-dir data/raw
 |---|---|---|
 | 1 | Remove tweets with a link **and** 3+ hashtags | These are ads and auto-posts, not people talking |
 | 2 | Remove links and the @names at the start of replies | Only the message should be scored |
-| 3 | Remove the same text repeated in a topic | Copy-paste campaigns and bots |
+| 3 | Remove the same text repeated within a topic and type (posts or replies) | Copy-paste campaigns and bots |
 | 4 | Remove texts under 3 words | Too short to judge ("lol") |
 
 After cleaning, **1,594 tweets** were left. Most removed tweets were ad **posts** (pets posts went from 304 to 83). Almost all replies stayed.
@@ -128,19 +129,31 @@ We score every tweet with three methods and call it toxic if the score is 0.5 or
 
 **Our guess vs. the data.** For each method we rank the 6 topics by % toxic replies and call the top 2 High, the middle 2 Mid and the bottom 2 Low, the same 2/2/2 split as our vote. Detoxify and RoBERTa match our guess for 4 of 6 topics: Tech came out lower and Pets higher than we guessed (but Pets has only 53 replies). The word list matches only 1 of 6.
 
-**Thresholds.** We also tried 0.2, 0.5 and 0.8 for both models. For replies, Detoxify gives 4/6 at all three. RoBERTa gives 4/6 only at 0.5, because its scores are spread out (450 tweets above 0.2, only 50 above 0.8). The models agree most at Detoxify 0.2 + RoBERTa 0.5 (kappa 0.73), almost the same as 0.5 + 0.5 (0.70), so we keep 0.5.
+**Thresholds.** We also tried 0.2, 0.5 and 0.8 for both models. For replies, Detoxify gives 4/6 at all three. RoBERTa gives 4/6 only at 0.5, because its scores are spread out (450 tweets above 0.2, only 50 above 0.8). US Politics is the most toxic topic at every threshold for both models, so we keep the usual default of 0.5.
 
-**A closer look.** Reading the top tweets per topic shows that most "toxic" tweets in calm topics are false alarms: friendly swearing ("Damn these look so good!"), double meanings ("tiny pussy cat") and violent words in a harmless context ("Slap the dog"). Pets' Mid level comes from 3 toxic replies, and only 1 of them is a real attack.
+**A closer look.** The 15 highest-scoring tweets for each model are almost all US Politics personal attacks (14 of 15 for Detoxify, 13 of 15 for RoBERTa). Reading the top tweets per topic shows that most "toxic" tweets in calm topics are false alarms: friendly swearing ("Damn these look so good!"), double meanings ("tiny pussy cat") and violent words in a harmless context ("Slap the dog"). Pets' Mid level comes from 3 toxic replies, and only 1 of them is a real attack.
 
 **Type of toxicity.** Insult is the most common type in the topics with enough toxic tweets: US Politics 75%, K-pop 78% and Movies 62%. Swearing (obscene) is second. Threats, identity attacks and sexual content are rare. Tech, Pets and Food have only 4–7 toxic tweets each, so their mix is not reliable.
 
-**The bad-word list vs. the models.** The list misses most toxic tweets: 83 of 122 for Detoxify and 117 of 160 for RoBERTa. 63 tweets are toxic for both models but have no word from the list, mostly insults without swear words (*stupid, pathetic, trash*). The list has few false alarms (4 tweets that neither model calls toxic).
+**How accurate is each method? (hand labels)** We labelled a sample of 204 replies by hand. The sample has all 102 replies flagged by at least one method (for precision) and 17 random un-flagged replies per topic (for recall). Each un-flagged reply is weighted to stand for all un-flagged replies of its topic, so the scores are estimates for all 817 replies. Two members labelled every reply alone, without the topic or scores, and a third member decided the 21 disagreements. The two labellers agreed on 183 of 204 (90%, Cohen's kappa 0.76).
+
+| Method | Precision | Recall | F1 | Accuracy |
+|---|---|---|---|---|
+| Word list | 0.88 | 0.29 | 0.43 | 0.933 |
+| Detoxify | 0.79 | 0.69 | 0.74 | 0.956 |
+| RoBERTa | 0.67 | 0.85 | 0.75 | 0.950 |
+
+The two models are about equally good, but Detoxify is more careful and RoBERTa finds more. The word list is usually right when it finds a bad word but misses most toxic replies, because insults like *stupid* or *trash* are not swear words. Accuracy is misleading here because about 91% of replies are not toxic. 95% of replies flagged by all three methods are really toxic, but only 41% of those flagged by just one.
 
 ```powershell
 pip install torch transformers nltk scikit-learn matplotlib pandas jupyter
 ```
 
 Open `toxicity_analysis.ipynb` and choose **Run All**. The first run downloads the models, scores all tweets and finds the trigger words (the trigger words alone take about 8 minutes). The results are saved in `data/scored.csv` and `data/trigger_words.csv` and reused next time.
+
+The figures are saved to `figures/` with the same numbers as in the report (`fig1_toxic_by_topic.png` = Figure 1, ..., `fig5_method_scores.png` = Figure 5). The appendix tables are the outputs of notebook section 7.
+
+**Hand labelling.** `python make_label_sample.py` makes the sample in `data/labelling/`: `labeller_A.csv` and `labeller_B.csv` (no topic, no scores, shuffled), `key.csv` (scores and weights) and `INSTRUCTIONS.txt`. It never overwrites label files that already exist. After both labellers finish, the notebook (section 6.1) saves `disagreements.csv`. The third member fills in its `final` column, and section 6.2 then computes the scores.
 
 ---
 
@@ -167,10 +180,12 @@ You need Python, `pip install twscrape pandas`, and an X account (use a spare on
 | File | What it is |
 |---|---|
 | `collect_x.py` | Scraper: collects posts and replies, then makes `combined.csv` |
-| `toxicity_analysis.ipynb` | Cleaning, scoring and all results |
+| `toxicity_analysis.ipynb` | Cleaning, scoring, hand-label evaluation and all results |
+| `make_label_sample.py` | Makes the 204-reply sample and the label sheets for hand labelling |
 | `test_twscrape.py` | Our first scraping test (one hashtag) |
 | `resources/ldnoobw_en.txt` | Bad-word list |
-| `figures/` | Figures for the report and slides |
+| `figures/` | Figures 1–5 of the report (same numbers) |
+| `data/labelling/` | Label sheets, `key.csv` and the third member's `disagreements.csv` |
 | `data/` | Tweets and scores. **Not committed to Git** |
 
 ## Important
@@ -187,4 +202,5 @@ You need Python, `pip install twscrape pandas`, and an X account (use a spare on
 - Pets has few replies (53 after cleaning), so its result is less certain.
 - K-pop uses the two biggest fandoms, which may argue more than smaller ones.
 - The AI models were trained on other data, and they see a reply without the full conversation.
-- We did not label tweets by hand, so we can't measure which method is right (no accuracy or F1). Instead we read the top tweets in each topic (notebook section 7). For the same reason, we kept the 0.5 threshold because the two models agree well there, not because it was shown to be the most accurate.
+- Removing tweets shorter than 3 words may have removed some short toxic replies.
+- The hand labels are our own judgement. Recall comes from only 17 un-flagged replies per topic. Just 1 of those 102 was labelled toxic, and it stands for about 7 replies, so recall would change noticeably if that one label changed.
